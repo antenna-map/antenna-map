@@ -104,10 +104,25 @@ $('file').onchange=async e=>{let file=e.target.files[0];if(!file)return;let rows
   const response=await fetch('./objects.json',{cache:'no-store'});
   if(!response.ok)throw new Error('HTTP '+response.status);
   const seed=await response.json();
-  const ids=new Set(data.map(r=>r.id));
-  let changed=false;
-  for(const r of seed){if(!ids.has(r.id)){data.push(r);changed=true;}}
-  if(changed)localStorage.setItem(KEY,JSON.stringify(data));
+  // Объединяем записи по адресу; самая поздняя дата протокола имеет приоритет.
+  // Сохраняем уже найденные координаты и пользовательские примечания.
+  const normalizeAddress = s => String(s || '').toLowerCase().replace(/ё/g,'е').replace(/\s+/g,' ').replace(/^[ ,.;]+|[ ,.;]+$/g,'');
+  const merged = new Map();
+  for (const r of [...seed, ...data]) {
+    if (!r.address || !String(r.address).trim()) continue;
+    const key = normalizeAddress(r.address);
+    if (!merged.has(key)) { merged.set(key, {...r}); continue; }
+    const existing = merged.get(key);
+    if ((r.protocolDate || '') > (existing.protocolDate || '')) existing.protocolDate = r.protocolDate;
+    if (existing.lat == null || existing.lon == null || existing.lat === '' || existing.lon === '') {
+      if (r.lat != null && r.lon != null && r.lat !== '' && r.lon !== '') {
+        existing.lat = r.lat; existing.lon = r.lon;
+      }
+    }
+    if (!existing.notes && r.notes) existing.notes = r.notes;
+  }
+  data = [...merged.values()];
+  localStorage.setItem(KEY, JSON.stringify(data));
  }catch(e){console.warn('Не удалось загрузить реестр',e);$('mapNotice').style.display='block';$('mapNotice').textContent='Не удалось загрузить objects.json: '+e.message;}
  render();
 }
